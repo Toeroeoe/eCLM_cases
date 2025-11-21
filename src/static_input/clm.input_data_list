@@ -1,0 +1,2 @@
+#! /bin/csh -f
+set CSMDATA = /p/scratch/cjibg31/jibg3105/CESMDataRoot/InputData/

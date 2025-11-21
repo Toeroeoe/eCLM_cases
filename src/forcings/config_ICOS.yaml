@@ -1,0 +1,37 @@
+# Please renew token. 
+# Find your new token at https://cpauth.icos-cp.eu/home/ on your account information.
+# Replace token every 24 hours.
+
+auth: 
+  token: cpauthToken=WzE3NjM4MTM3NTI5MzMsImMucG9wcGVAZnotanVlbGljaC5kZSIsIlNhbWwiXR4wZQIwYYUg750G6Zt8aqL5TEKVNixApKLKkgeKjcwqOURI/jqejgcGQ6y4NNwVPUviuFoSAjEA1tUTKI0V4bY35gmxteGr3RUIKSE+fOAYq3GMWq6aFiDbvT618OLYjD2iLufj34mZ
+  
+station:
+  id: FI-Hyy
+
+datasets:
+  - ETC L2 Fluxnet (half-hourly)
+  - ETC NRT Meteo
+  - ETC NRT Meteosens
+  - ETC L2 Meteo
+  - ETC L2 Meteosens
+  - Fluxnet Product
+  
+variables:
+  names:
+    TA: TBOT
+    RH: RH
+    WS: WIND
+    PA: PSRF
+    P: PRECTmms
+    SW_IN: FSDS
+    LW_IN: FLDS
+  units:
+    TA: °C
+    RH: "%"
+    WS: m s-1
+    PA: kPa
+    P: mm
+    SW_IN: W m-2
+    LW_IN: W m-2
+  
+  

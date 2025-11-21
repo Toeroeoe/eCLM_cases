@@ -1,0 +1,9 @@
+*.pyc
+*.nc
+*.pdf
+*.out
+*.err
+.vscode/*
+*.log
+*.Log
+mpi-*
