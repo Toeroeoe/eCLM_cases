@@ -3,18 +3,19 @@
 # Replace token every 24 hours.
 
 auth: 
-  token: cpauthToken=WzE3NjM4MTM3NTI5MzMsImMucG9wcGVAZnotanVlbGljaC5kZSIsIlNhbWwiXR4wZQIwYYUg750G6Zt8aqL5TEKVNixApKLKkgeKjcwqOURI/jqejgcGQ6y4NNwVPUviuFoSAjEA1tUTKI0V4bY35gmxteGr3RUIKSE+fOAYq3GMWq6aFiDbvT618OLYjD2iLufj34mZ
+  token: cpauthToken=WzE3NjM5OTg1MTAyMDIsImMucG9wcGVAZnotanVlbGljaC5kZSIsIlNhbWwiXR4wZQIwVffvqrSGhDqgjYa38eIEWp7/Xp0wEnh4ee/p0OQ+MubUE9HXp86i5sQ5FtcVyR5LAjEAxX1JqydcQ3PCfUyKoHxP/+OKBt3H2H7WjlDuHj37d6zt5DT6byxp60MzmPm74Aju
   
 station:
   id: FI-Hyy
 
 datasets:
-  - ETC L2 Fluxnet (half-hourly)
-  - ETC NRT Meteo
-  - ETC NRT Meteosens
+  #- ETC L2 Fluxnet (half-hourly)
+  #- ETC NRT Meteo
+  #- ETC NRT Meteosens
   - ETC L2 Meteo
-  - ETC L2 Meteosens
-  - Fluxnet Product
+  #- ETC L2 Meteosens
+  #- Fluxnet Product
+  #- Fluxnet Archive
   
 variables:
   names:

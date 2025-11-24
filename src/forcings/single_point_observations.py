@@ -4,11 +4,12 @@ import pytz
 import numpy as np
 import netCDF4 as nc
 import pandas as pd
+from pint import UnitRegistry
 
 
 # Settings
-infile: str = '/home/fernand/Downloads/flxnet_sites/SE-Svb_ICOS_2014-2020_beta-3/6h_se_svb_met.csv'
-outdir: str = '/home/fernand/JURECA/CLM5_DATA/inputdata/atm/datm7/trial_22/SE-Svb/local/'
+infile: str = 'ICOS_single_point_FI-Hyy.csv'
+outdir: str = './out/'
 
 var_names: dict[str, str | None] = {'PRECTmms': 'P', 
                                     'PSRF': 'PA', 
@@ -18,13 +19,22 @@ var_names: dict[str, str | None] = {'PRECTmms': 'P',
                                     'TBOT': 'TA', 
                                     'WIND': 'WS'}
 
-src_units: dict[str, str | None] = {'PRECTmms': 'mm/30min',
+src_units: dict[str, str | None] = {'PRECTmms': 'mm/h',
                                     'PSRF': 'kPa',
                                     'FSDS': 'W/m^2',
                                     'FLDS': 'W/m^2',
                                     'RH': '%',
                                     'TBOT': '°C',
                                     'WIND': 'm/s'}
+
+
+scaling_factors: dict[str, float | None] = {'PRECTmms': 0.5,  # hourly to half-hourly
+                                            'PSRF': 1,
+                                            'FSDS': 1,
+                                            'FLDS': 1,
+                                            'RH': 1,
+                                            'TBOT': 1,
+                                            'WIND': 1}
 
 dst_units: dict[str, str | None] = {'PRECTmms': 'mm/s',
                                     'PSRF': 'Pa',
@@ -34,45 +44,42 @@ dst_units: dict[str, str | None] = {'PRECTmms': 'mm/s',
                                     'TBOT': 'K',
                                     'WIND': 'm/s'}
 
-time_col: str = 'TIMESTAMP_START'
+time_col: str = 'TIMESTAMP'
 time_format: str = '%Y-%m-%d %H:%M:%S'
-start_year: int = 2014
-end_year: int = 2019
+start_year: int = 2020
+end_year: int = 2020
 start_month: int = 1
-end_month: int = 12
+end_month: int = 1
+t_res: str = '1h'
+
+lon: float = 20.00
+lat: float = 61.85
+
+latlon_buffer: float = 0.01  
+
+na_values = ["-9999", "-9999.0"]
 
 
-def get_dates_from_file(df: pd.DataFrame) -> np.ndarray:   
-        return np.array([pytz.utc.localize(date) for date in df.index])
-    
-    
-def get_index_from_dates(dates: np.ndarray, 
-                         year: int, 
-                         month: int) -> tuple[int, int]:
-        
-        start = np.where(dates == datetime.datetime(year, month, 1, 0, 0, tzinfo=datetime.timezone.utc))[0][0]
-        
-        if month == 12:
-            if year == years[-1]:
-                end = len(dates)
-            else:
-                end = np.where(dates == datetime.datetime(year + 1, 1, 1, 0, 0, tzinfo=datetime.timezone.utc))[0][0]
-        else:
-            end = np.where(dates == datetime.datetime(year, month+1, 1, 0, 0, tzinfo=datetime.timezone.utc))[0][0]
-        return (start, end)
-
-
+# Main code, don't change anything below this line unless you know what you're doing
 if __name__ == "__main__":
+    
+    # Class for unit handling
+    Q_ = UnitRegistry().Quantity
+    
+    # Handle negative latitudes
+    lonbuffer = latlon_buffer
+    latbuffer = latlon_buffer if lat >= 0 else -latlon_buffer
 
     # reading in data
-    data = pd.read_csv(infile, na_values=["-9999", "-9999.0"])
+    data = pd.read_csv(infile, na_values=na_values)
 
     # Convert 'TIMESTAMP_START' to datetime format and set as index
     data[time_col] = pd.to_datetime(data[time_col], format=time_format)
     data.set_index(time_col, inplace=True)
 
-    site_dates = get_dates_from_file(data)
+    site_dates = data.index.to_series().apply(lambda x: x.tz_localize(pytz.utc))
     years = np.arange(start_year, end_year + 1)
+    t_per_h = site_dates.resample(t_res).mean().count() / site_dates.resample('1h').mean().count()
 
     # Collect all the data
     prec_vals  = data[var_names['PRECTmms']].to_numpy()
@@ -86,10 +93,12 @@ if __name__ == "__main__":
     # Iterate through years and months to create separate files:
     for y in years:
         
-        if y == start_year:
+        if (y == start_year) and (y != end_year):
             months = np.arange(start_month, 12 + 1)
-        elif y == end_year:
+        elif (y == end_year) and (y != start_year):
             months = np.arange(1, end_month + 1)
+        elif (y == start_year) and (y == end_year):
+            months = np.arange(start_month, end_month + 1)
         else:
             months = np.arange(1, 12 + 1)
         
@@ -100,165 +109,200 @@ if __name__ == "__main__":
         
             dst = nc.Dataset(dst_name, "w")
 
-            try:
-                # get indices
-                index_s, index_e = get_index_from_dates(site_dates, y, m)
+            indices = np.argwhere((site_dates.dt.year == y) & (site_dates.dt.month == m)).flatten()
 
-                # PRECT [mm/s]
-                precip_forc = np.array(prec_vals[index_s:index_e])
-                precip_forc[np.isnan(precip_forc)]= 1e+36
+            # PRECT
+            precip_forc = pd.Series(Q_(prec_vals[indices], 
+                                       src_units['PRECTmms']).to(dst_units['PRECTmms']).magnitude * scaling_factors['PRECTmms'],
+                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            
 
-                # PSRF [Pa]
-                if prs_unit == 'KPa':
-                    prs_forc = np.array(prs_vals[index_s:index_e] * 1000.0)
-                    prs_forc[np.isnan(prs_forc)]= 1e+36
-                if prs_unit == 'MPa':
-                    prs_forc = np.array(prs_vals[index_s:index_e] * 1000000.0)
-                    prs_forc[np.isnan(prs_forc)]= 1e+36
+            # PSRF
+            prs_forc = pd.Series(Q_(prs_vals[indices], 
+                                       src_units['PSRF']).to(dst_units['PSRF']).magnitude * scaling_factors['PSRF'],
+                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
 
-                #  FSDS [W / m^2]
-                fsds_forc = np.array(fsds_vals[index_s:index_e])
-                fsds_forc[np.isnan(fsds_forc)]= 1e+36
+            # FSDS
+            fsds_forc = pd.Series(Q_(fsds_vals[indices], 
+                                       src_units['FSDS']).to(dst_units['FSDS']).magnitude * scaling_factors['FSDS'],
+                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            
 
-                #  FLDS [W / m^2]
-                flds_forc = np.array(flds_vals[index_s:index_e])
-                flds_forc[np.isnan(flds_forc)]= 1e+36
+            # FLDS
+            flds_forc = pd.Series(Q_(flds_vals[indices], 
+                                       src_units['FLDS']).to(dst_units['FLDS']).magnitude * scaling_factors['FLDS'],
+                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
 
-                # RH [%]
-                if q_unit == '%':
-                    q_forc = np.array(q_vals[index_s:index_e])
-                    q_forc[np.isnan(q_forc)]= 1e+36
-                if q_unit == 'portion':
-                    q_forc = np.array(q_vals[index_s:index_e] * 100.0)
-                    q_forc[np.isnan(q_forc)]= 1e+36
+            # RH
+            q_forc = pd.Series(Q_(q_vals[indices], 
+                                       src_units['RH']).to(dst_units['RH']).magnitude * scaling_factors['RH'],
+                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
 
+            # TBOT
+            temp_forc = pd.Series(Q_(temp_vals[indices], 
+                                    src_units['TBOT']).to(dst_units['TBOT']).magnitude * scaling_factors['TBOT'],
+                                 index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            # WIND
+            wind_forc = pd.Series(Q_(wind_vals[indices], 
+                                    src_units['WIND']).to(dst_units['WIND']).magnitude * scaling_factors['WIND'],
+                                 index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            
+            # time hours since beginning of file
+            time_forc = np.linspace(0, 
+                                   (indices[-1] - indices[0]) * t_per_h, 
+                                   indices[-1] - indices[-0], 
+                                   dtype=np.float32)
+            
+            #print(time_forc)
+            
+            #exit()
 
-                # TBOT [K]
-                temp_forc = np.array(temp_vals[index_s:index_e])
-                temp_forc[np.isnan(temp_forc)]= 1e+36
-
-                # WIND [m/s]
-                wind_forc = np.array(wind_vals[index_s:index_e])
-                wind_forc[np.isnan(wind_forc)]= 1e+36
-
-                # time hours since beginning of file
-                time_forc = np.linspace(0, (index_e - index_s) * 6, (index_e - index_s), endpoint=False)
-
-
-                # dimensions
-                dst.createDimension("scalar", 1)
-                dst.createDimension("lon", 1)
-                dst.createDimension("lat", 1)
-                dst.createDimension("time", None) #len(time_forc))
-
-
-                # Attributes
-                dst.setncattr("Forcings_generated_by", "Fernand Eloundou")
-                dst.setncattr("on_date", datetime.datetime.today().strftime("%Y%m%d%H%M"))
-                dst.setncattr("based_on", "data from ICOS portal") 
-                dst.setncattr("used_for", "Singlepoint CLM 5.0")
-
-                time = dst.createVariable("time", datatype=np.float32, dimensions=("time",))
-                time.setncatts({'long_name': u"observation time",
-                                'units': u"hours since " + str(y) + "-" + str(m).zfill(2) + "-01 00:00:00", 
-                                "calendar": u"gregorian", "axis": u"T"})
-                # Time for 3-hour intervals
-                dst.variables["time"][:] = time_forc[:]
-
-                longxy = dst.createVariable("LONGXY", datatype=np.float32, dimensions=("lat", "lon"), 
-                                            fill_value=9.96921e+36)
-                longxy.setncatts({"long_name": "longitude", "units": "degrees E", "mode": "time-invariant"})     
-                dst.variables["LONGXY"][:, :] = 19.7745
-
-                latixy = dst.createVariable("LATIXY", datatype=np.float32, dimensions=("lat", "lon"), 
-                                            fill_value=9.96921e+36)
-                latixy.setncatts({"long_name": "latitude", "units": "degrees N", "mode": "time-invariant"})            
-                dst.variables["LATIXY"][:, :] = 64.25611
-
-                lone = dst.createVariable("LONE", datatype=np.float32, dimensions=("lat", "lon"), 
-                                            fill_value=9.96921e+36)
-                lone.setncatts({"long_name": "longitude of east edge", "units": "degrees E", "mode": "time-invariant"})            
-                dst.variables["LONE"][:, :] = 19.7845
-
-                latn = dst.createVariable("LATN", datatype=np.float32, dimensions=("lat", "lon"), 
-                                            fill_value=9.96921e+36)
-                latn.setncatts({"long_name": "latitude of north edge", "units": "degrees N", "mode": "time-invariant"})            
-                dst.variables["LATN"][:, :] = 64.26611
-
-                lonw = dst.createVariable("LONW", datatype=np.float32, dimensions=("lat", "lon"), 
-                                            fill_value=9.96921e+36)
-                lonw.setncatts({"long_name": "longitude of west edge", "units": "degrees E", "mode": "time-invariant"})            
-                dst.variables["LONW"][:, :] = 19.7645
-
-                lats = dst.createVariable("LATS", datatype=np.float32, dimensions=("lat", "lon"), 
-                                            fill_value=9.96921e+36)
-                lats.setncatts({"long_name": "latitude of south edge", "units": "degrees N", "mode": "time-invariant"})            
-                dst.variables["LATS"][:, :] = 64.24611
+            # dimensions
+            dst.createDimension("scalar", 1)
+            dst.createDimension("lon", 1)
+            dst.createDimension("lat", 1)
+            dst.createDimension("time", None) 
 
 
-                prectmms = dst.createVariable("PRECTmms", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                prectmms.setncatts({"long_name": "Precipitation",'units': "mm/s", "missing_value": 1e+36, "mode": "time-dependent"})
-                dst.variables["PRECTmms"][:, :, :] = precip_forc[:]
+            # Attributes
+            dst.setncattr("Forcings_generated_by", "Fernand Eloundou")
+            dst.setncattr("on_date", datetime.datetime.today().strftime("%Y%m%d%H%M"))
+            dst.setncattr("based_on", "data from ICOS portal") 
+            dst.setncattr("used_for", "Singlepoint CLM 5.0")
+            
 
-                psrf = dst.createVariable("PSRF", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                psrf.setncatts({"long_name":"surface pressure at the lowest atm level (2m above ground)", 'units': "Pa", "missing_value": 1e+36, "mode": "time-dependent"})
-                dst.variables["PSRF"][:, :, :] = prs_forc[:]
+            time = dst.createVariable("time", datatype=np.float32, dimensions=("time",))
+            time.setncatts({"long_name": "observation time",
+                            "units": f"hours since {y:04d}-{m:02d}-01 00:00:00", 
+                            "calendar": "gregorian", 
+                            "axis": "T"})
+            
+            # Time for 3-hour intervals
+            dst.variables["time"][:] = time_forc[:]
 
-                fsds = dst.createVariable("FSDS", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                fsds.setncatts({"long_name": "Downward shortwave radiation", "missing_value": 1e+36, 'units': "W/m^2", "mode": "time-dependent"})
-                dst.variables["FSDS"][:, :, :] = fsds_forc[:]
+            longxy = dst.createVariable("LONGXY", datatype=np.float32, dimensions=("lat", "lon"), 
+                                        fill_value=np.float32(np.nan))
+            longxy.setncatts({"long_name": "longitude", "units": "degrees E", "mode": "time-invariant"})     
+            dst.variables["LONGXY"][:, :] = lon
 
-                flds = dst.createVariable("FLDS", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                flds.setncatts({"long_name": "Downward longwave radiation", "missing_value": 1e+36, 'units': "W/m^2", "mode": "time-dependent"})
-                dst.variables["FLDS"][:, :, :] = flds_forc[:]
+            latixy = dst.createVariable("LATIXY", datatype=np.float32, dimensions=("lat", "lon"), 
+                                        fill_value=np.float32(np.nan))
+            latixy.setncatts({"long_name": "latitude", "units": "degrees N", "mode": "time-invariant"})            
+            dst.variables["LATIXY"][:, :] = lat
 
-                rh = dst.createVariable("RH", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                rh.setncatts({"long_name":"relative humidity at the lowest atm level (2m above ground)", 'units': "%", "missing_value": 1e+36, "mode": "time-dependent"})
-                dst.variables["RH"][:, :, :] = q_forc[:]
+            lone = dst.createVariable("LONE", datatype=np.float32, dimensions=("lat", "lon"), 
+                                      fill_value=np.float32(np.nan))
+            lone.setncatts({"long_name": "longitude of east edge", "units": "degrees E", "mode": "time-invariant"})            
+            dst.variables["LONE"][:, :] = lon + lonbuffer
 
-                tbot = dst.createVariable("TBOT", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                tbot.setncatts({"long_name":"temperature at the lowest atm level (2m above ground)", 'units': "K", "missing_value": 1e+36, "mode": "time-dependent"})
-                dst.variables["TBOT"][:, : , :] = temp_forc[:]
+            latn = dst.createVariable("LATN", datatype=np.float32, dimensions=("lat", "lon"), 
+                                      fill_value=np.float32(np.nan))
+            latn.setncatts({"long_name": "latitude of north edge", "units": "degrees N", "mode": "time-invariant"})            
+            dst.variables["LATN"][:, :] = lat + latbuffer
 
-                wind = dst.createVariable("WIND", datatype=np.float64,
-                                            dimensions=("time", "lat", "lon",), 
-                                            fill_value=1e+36)
-                wind.setncatts({"long_name":"wind at the lowest atm level (2m above ground)", 'units': "m/s", "missing_value": 1e+36, "mode": "time-dependent"})
-                dst.variables["WIND"][:, :, :] = wind_forc[:]
+            lonw = dst.createVariable("LONW", datatype=np.float32, dimensions=("lat", "lon"), 
+                                      fill_value=np.float32(np.nan))
+            lonw.setncatts({"long_name": "longitude of west edge", "units": "degrees E", "mode": "time-invariant"})            
+            dst.variables["LONW"][:, :] = lon - lonbuffer
 
-                #zbot = dst.createVariable("ZBOT", datatype=np.float32,
-                #                            dimensions=("time", "lat", "lon",), 
-                #                            fill_value=1e+36)
-                #zbot.setncatts({"long_name":"observation height", "missing_value": 1e+36, "unit": "m a.s.l.", "mode": "time-invariant"})
-                #dst.variables["ZBOT"][:, :, :] = 2.0 
+            lats = dst.createVariable("LATS", datatype=np.float32, dimensions=("lat", "lon"), 
+                                            fill_value=np.float32(np.nan))
+            lats.setncatts({"long_name": "latitude of south edge", "units": "degrees N", "mode": "time-invariant"})            
+            dst.variables["LATS"][:, :] = lat - latbuffer
+
+            prectmms = dst.createVariable("PRECTmms", datatype=np.float64,
+                                          dimensions=("time", "lat", "lon",), 
+                                          fill_value=np.float64(np.nan))
+            prectmms.setncatts({"long_name": "Precipitation",
+                                "units": dst_units["PRECTmms"], 
+                                "missing_value": np.float64(np.nan),
+                                "mode": "time-dependent"})
+            
+            dst.variables["PRECTmms"][:, :, :] = precip_forc[:]
+
+            psrf = dst.createVariable("PSRF", datatype=np.float64,
+                                      dimensions=("time", "lat", "lon",), 
+                                      fill_value=np.float64(np.nan))
+            psrf.setncatts({"long_name": "surface pressure at the lowest atm level (2m above ground)", 
+                            "units": dst_units["PSRF"], 
+                            "missing_value": np.float64(np.nan), 
+                            "mode": "time-dependent"})
+            dst.variables["PSRF"][:, :, :] = prs_forc[:]
+
+            fsds = dst.createVariable("FSDS", datatype=np.float64,
+                                      dimensions=("time", "lat", "lon",), 
+                                      fill_value=np.float64(np.nan))
+            fsds.setncatts({"long_name": "Downward shortwave radiation", 
+                            "missing_value": np.float64(np.nan), 
+                            "units": dst_units["FSDS"], 
+                            "mode": "time-dependent"})
+            
+            dst.variables["FSDS"][:, :, :] = fsds_forc[:]
+
+            flds = dst.createVariable("FLDS", datatype=np.float64,
+                                      dimensions=("time", "lat", "lon",), 
+                                      fill_value=np.float64(np.nan))
+            flds.setncatts({"long_name": "Downward longwave radiation", 
+                            "missing_value": np.float64(np.nan), 
+                            "units": dst_units["FLDS"], 
+                            "mode": "time-dependent"})
+            
+            dst.variables["FLDS"][:, :, :] = flds_forc[:]
+
+            rh = dst.createVariable("RH", datatype=np.float64,
+                                        dimensions=("time", "lat", "lon",), 
+                                        fill_value=np.float64(np.nan))
+            rh.setncatts({"long_name": "relative humidity at the lowest atm level (2m above ground)", 
+                          "units": dst_units["RH"], 
+                          "missing_value": np.float64(np.nan), 
+                          "mode": "time-dependent"})
+            
+            dst.variables["RH"][:, :, :] = q_forc[:]
+
+            tbot = dst.createVariable("TBOT", datatype=np.float64,
+                                      dimensions=("time", "lat", "lon",), 
+                                      fill_value=np.float64(np.nan))
+            tbot.setncatts({"long_name": "temperature at the lowest atm level (2m above ground)", 
+                            "units": dst_units["TBOT"], 
+                            "missing_value": np.float64(np.nan), 
+                            "mode": "time-dependent"})
+            
+            dst.variables["TBOT"][:, : , :] = temp_forc[:]
+
+            wind = dst.createVariable("WIND", datatype=np.float64,
+                                      dimensions=("time", "lat", "lon",), 
+                                      fill_value=np.float64(np.nan))
+            
+            wind.setncatts({"long_name": "wind at the lowest atm level (2m above ground)", 
+                            "units": dst_units["WIND"], 
+                            "missing_value": np.float64(np.nan), 
+                            "mode": "time-dependent"})
+            
+            dst.variables["WIND"][:, :, :] = wind_forc[:]
 
 
-                edgen = dst.createVariable("EDGEN", np.float32, ("scalar",))
-                edgen.setncatts({"long_name":"northern edge in atmospheric data", "units": "degrees N", "mode":"time-invariant"})
-                edgee = dst.createVariable("EDGEE", np.float32, ("scalar",))
-                edgee.setncatts({"long_name":"eastern edge in atmospheric data", "units": "degrees E", "mode":"time-invariant"})
-                edges = dst.createVariable("EDGES", np.float32, ("scalar",))
-                edges.setncatts({"long_name":"southern edge in atmospheric data", "units": "degrees N", "mode":"time-invariant"})
-                edgew = dst.createVariable("EDGEW", np.float32, ("scalar",))
-                edgew.setncatts({"long_name":"western edge in atmospheric data", "units": "degrees E", "mode":"time-invariant"})
+            edgen = dst.createVariable("EDGEN", np.float32, ("scalar",))
+            edgen.setncatts({"long_name": "northern edge in atmospheric data", 
+                             "units": "degrees N", 
+                             "mode":"time-invariant"})
+            
+            edgee = dst.createVariable("EDGEE", np.float32, ("scalar",))
+            edgee.setncatts({"long_name": "eastern edge in atmospheric data", 
+                             "units": "degrees E", 
+                             "mode": "time-invariant"})
+            
+            edges = dst.createVariable("EDGES", np.float32, ("scalar",))
+            edges.setncatts({"long_name": "southern edge in atmospheric data", 
+                             "units": "degrees N", 
+                             "mode": "time-invariant"})
+            
+            edgew = dst.createVariable("EDGEW", np.float32, ("scalar",))
+            edgew.setncatts({"long_name": "western edge in atmospheric data", 
+                             "units": "degrees E", 
+                             "mode": "time-invariant"})
 
-                # location for site
-                dst.variables["EDGEN"][:] = 64.25611
-                dst.variables["EDGES"][:] = 64.25611
-                dst.variables["EDGEE"][:] = 19.7745
-                dst.variables["EDGEW"][:] = 19.7745
-
-            except:
-                print(f"skipped month {m} in year {y}")
+            # location for site
+            dst.variables["EDGEN"][:] = lat
+            dst.variables["EDGES"][:] = lat
+            dst.variables["EDGEE"][:] = lon
+            dst.variables["EDGEW"][:] = lon

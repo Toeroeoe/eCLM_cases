@@ -1,0 +1,18 @@
+geo:
+  path: "/p/scratch/cjibg31/jibg3105/CESMDataRoot/InputData/share/domains/EUR-0275/domain/domain.lnd.EUR-0275_final.nc"
+  lat_name: "yc"
+  lon_name: "xc"
+
+stations:
+  path: "in/CP_station_data.csv"
+  id_col: "Stations_id"
+  lat_col: "geograph.Breite"
+  lon_col: "geograph.Laenge"
+
+data:
+  path: "/p/scratch/cjibg31/jibg3105/data/CLM5EU3_eLTER/006/join_8d/*.nc"
+  var_name: "GPP"
+  var_unit: "gC/m^2/s"
+
+out:
+  path: "out/out.csv"
