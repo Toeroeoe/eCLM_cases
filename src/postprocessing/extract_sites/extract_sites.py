@@ -109,7 +109,7 @@ if __name__ == "__main__":
             raise NotImplementedError(f"Variable with ndim = {var.ndim} not implemented.")
         
         cols.append(pd.DataFrame(array_i, 
-                                 index=time.astype('datetime64[ns]'), 
+                                 index=np.array(time), 
                                  columns=[f"site_{ids[i]}_{config['data']['var_name']} [{config['data']['var_unit']}]"]))
         
     df_out = pd.concat(cols, axis=1, copy=False)
