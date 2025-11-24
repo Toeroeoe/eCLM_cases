@@ -3,7 +3,8 @@ import yaml
 import os
 import numpy as np
 import pandas as pd
-import xarray as xr
+#import xarray as xr
+import netCDF4 as nc
 
 
 def grid_to_points(lat: np.ndarray, 
@@ -71,25 +72,28 @@ if __name__ == "__main__":
     if len(file_data) == 0:
         raise FileNotFoundError(f"No data files found at {config['data']['path']}")
     elif len(file_data) == 1:
-        ds_data = xr.open_dataset(file_data[0])
+        ds_data = nc.Dataset(file_data[0])
     else:
-        ds_data = xr.open_mfdataset(file_data)
+        ds_data = nc.MFDataset(sorted(file_data), aggdim="time")
+
+    time = nc.num2date(ds_data.variables["time"][:],
+                     units=ds_data.variables["time"].units, 
+                     calendar=ds_data.variables["time"].calendar)
     
-    var = ds_data[config["data"]["var_name"]]    
-    time = pd.to_datetime(ds_data["time"].to_numpy())
+    var = ds_data.variables[config["data"]["var_name"]][:]
     
     file_geo = glob.glob(config["geo"]["path"])
     if len(file_geo) == 0:
         raise FileNotFoundError(f"No geo files found at {config['geo']['path']}")
     else:
-        ds_geo = xr.open_dataset(file_geo[0])
+        ds_geo = nc.Dataset(file_geo[0])
     
     lat2d = ds_geo[config["geo"]["lat_name"]][:]
     lon2d = ds_geo[config["geo"]["lon_name"]][:]
 
     cells = grid_to_points(lat2d, lon2d)
     
-    df_out = pd.DataFrame(index = time)
+    cols = []
     
     for i, (lat, lon) in enumerate(zip(lats, lons)):
         
@@ -104,7 +108,11 @@ if __name__ == "__main__":
         else:
             raise NotImplementedError(f"Variable with ndim = {var.ndim} not implemented.")
         
-        df_out[f"site_{ids[i]}_{config['data']['var_name']} [{config['data']['var_unit']}]"] = array_i
+        cols.append(pd.DataFrame(array_i, 
+                                 index=time.astype('datetime64[ns]'), 
+                                 columns=[f"site_{ids[i]}_{config['data']['var_name']} [{config['data']['var_unit']}]"]))
+        
+    df_out = pd.concat(cols, axis=1, copy=False)
 
     os.makedirs(os.path.dirname(config["out"]["path"]), exist_ok=True)
     df_out.to_csv(config["out"]["path"], index_label="time")
