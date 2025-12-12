@@ -1,12 +1,11 @@
 # Please renew token. 
 # Find your new token at https://cpauth.icos-cp.eu/home/ on your account information.
 # Replace token every 24 hours.
-
 auth: 
-  token: cpauthToken=WzE3NjM5OTg1MTAyMDIsImMucG9wcGVAZnotanVlbGljaC5kZSIsIlNhbWwiXR4wZQIwVffvqrSGhDqgjYa38eIEWp7/Xp0wEnh4ee/p0OQ+MubUE9HXp86i5sQ5FtcVyR5LAjEAxX1JqydcQ3PCfUyKoHxP/+OKBt3H2H7WjlDuHj37d6zt5DT6byxp60MzmPm74Aju
+  token: cpauthToken=WzE3NjU1NTMyNTAzMjIsImMucG9wcGVAZnotanVlbGljaC5kZSIsIlNhbWwiXR4wZAIwO7F2H+YoOiFLW8AW1SwA69baS9l3P5KBSlzCevX1kcw4FNiQ4M1X4AGlJTbMoaSPAjA4Jkku+rGjK5KETrPb9wjNMD5IggZg9/wSiQtZ8mAmGpMoCnRBPsk/+AQVdWYPw8c=
   
 station:
-  id: FI-Hyy
+  id: FR-Aur
 
 datasets:
   #- ETC L2 Fluxnet (half-hourly)

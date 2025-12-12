@@ -1,3 +1,4 @@
+import os
 from functools import reduce
 import yaml
 
@@ -8,12 +9,17 @@ from icoscp_core.icos import bootstrap
 from icoscp.dobj import Dobj
 from icoscp import cpauth
 
+outdir: str = "out/csv/"
+
 
 if __name__ == "__main__":
+    
     config = yaml.safe_load(open("config_ICOS.yaml"))
 
     if not isinstance(config, dict): 
         raise ValueError("Configuration file is empty or not found.")
+    
+    os.makedirs(outdir, exist_ok=True)
 
     cookie_token = config["auth"]["token"]
     
@@ -40,22 +46,6 @@ if __name__ == "__main__":
     print("General number of datasets found: ", len(datasets_found))
     print("Dataset URIs found: ", datasets_found)
     print("Datasets found: ", dataset_found_names)
-    
-#    station_meta = []
-#    station_meta_names = []
-#    
-#    for m in meta.list_data_objects(station=station_list):
-#        
-#        if m.datatype_uri in datasets_found:
-#
-#            station_meta.append(m.uri)
-#            station_meta_names.extend([n.label 
-#                                       for n in meta.list_datatypes() 
-#                                       if n.uri == m.datatype_uri])
-    
-#    print("Number of datasets at station: ", len(station_meta))
-#    print("Dataset URIs at station: ", station_meta)
-#    print("Dataset names at station: ", station_meta_names)
     
     station_doj_uris = [meta.list_data_objects(station=station_list,
                                                 datatype=d)[0].uri
@@ -89,14 +79,4 @@ if __name__ == "__main__":
             
     df_all = df_all.set_index("TIMESTAMP").sort_index()
     
-    df_all.to_csv(f"ICOS_single_point_{station_id}.csv")
-            
-    
-    
-    
-        
-        
-    
-    
-    
-    #meta, data = bootstrap.fromCookieToken(cookie_token)
+    df_all.to_csv(f"{outdir}/ICOS_single_point_{station_id}.csv")

@@ -1,6 +1,7 @@
 import os
 import datetime
 import pytz
+import yaml
 import numpy as np
 import netCDF4 as nc
 import pandas as pd
@@ -8,49 +9,56 @@ from pint import UnitRegistry
 
 
 # Settings
-infile: str = 'ICOS_single_point_FI-Hyy.csv'
-outdir: str = './out/'
+config = yaml.safe_load(open("config_ICOS.yaml"))
 
-var_names: dict[str, str | None] = {'PRECTmms': 'P', 
-                                    'PSRF': 'PA', 
-                                    'FSDS': 'SW_IN', 
-                                    'FLDS': 'LW_IN', 
-                                    'RH': 'RH', 
-                                    'TBOT': 'TA', 
-                                    'WIND': 'WS'}
+if not isinstance(config, dict): 
+    raise ValueError("Configuration file is empty or not found.")
 
-src_units: dict[str, str | None] = {'PRECTmms': 'mm/h',
-                                    'PSRF': 'kPa',
-                                    'FSDS': 'W/m^2',
-                                    'FLDS': 'W/m^2',
-                                    'RH': '%',
-                                    'TBOT': '°C',
-                                    'WIND': 'm/s'}
+station = config["station"]["id"]
+
+infile: str = f"out/csv/ICOS_single_point_{station}.csv"
+outdir: str = f"./out/{station}/"
+
+var_names: dict[str, str] = {"PRECTmms": "P", 
+                             "PSRF": "PA", 
+                             "FSDS": "SW_IN", 
+                             "FLDS": "LW_IN", 
+                             "RH": "RH", 
+                             "TBOT": "TA", 
+                             "WIND": "WS"}
+
+src_units: dict[str, str] = {"PRECTmms": "mm/h",
+                             "PSRF": "kPa",
+                             "FSDS": "W/m^2",
+                             "FLDS": "W/m^2",
+                             "RH": "%",
+                             "TBOT": "°C",
+                             "WIND": "m/s"}
 
 
-scaling_factors: dict[str, float | None] = {'PRECTmms': 0.5,  # hourly to half-hourly
-                                            'PSRF': 1,
-                                            'FSDS': 1,
-                                            'FLDS': 1,
-                                            'RH': 1,
-                                            'TBOT': 1,
-                                            'WIND': 1}
+scaling_factors: dict[str, float] = {"PRECTmms": 0.5,  # hourly to half-hourly
+                                     "PSRF": 1,
+                                     "FSDS": 1,
+                                     "FLDS": 1,
+                                     "RH": 1,
+                                     "TBOT": 1,
+                                     "WIND": 1}
 
-dst_units: dict[str, str | None] = {'PRECTmms': 'mm/s',
-                                    'PSRF': 'Pa',
-                                    'FSDS': 'W/m^2',
-                                    'FLDS': 'W/m^2',
-                                    'RH': '%',
-                                    'TBOT': 'K',
-                                    'WIND': 'm/s'}
+dst_units: dict[str, str] = {"PRECTmms": "mm/s",
+                             "PSRF": "Pa",
+                             "FSDS": "W/m^2",
+                             "FLDS": "W/m^2",
+                             "RH": "%",
+                             "TBOT": "K",
+                             "WIND": "m/s"}
 
-time_col: str = 'TIMESTAMP'
-time_format: str = '%Y-%m-%d %H:%M:%S'
-start_year: int = 2020
-end_year: int = 2020
-start_month: int = 1
-end_month: int = 1
-t_res: str = '1h'
+time_col: str = "TIMESTAMP"
+time_format: str = "%Y-%m-%d %H:%M:%S"
+start_year: int = 2022
+end_year: int = 2022
+start_month: int = 6
+end_month: int = 7
+t_res: str = "1h"
 
 lon: float = 20.00
 lat: float = 61.85
@@ -77,18 +85,18 @@ if __name__ == "__main__":
     data[time_col] = pd.to_datetime(data[time_col], format=time_format)
     data.set_index(time_col, inplace=True)
 
-    site_dates = data.index.to_series().apply(lambda x: x.tz_localize(pytz.utc))
+    site_dates = data.index.to_series(name="time")#.apply(lambda x: x.tz_localize(pytz.utc))
     years = np.arange(start_year, end_year + 1)
-    t_per_h = site_dates.resample(t_res).mean().count() / site_dates.resample('1h').mean().count()
+    t_per_h = site_dates.resample(t_res).mean().count() / site_dates.resample("1h").mean().count()
 
     # Collect all the data
-    prec_vals  = data[var_names['PRECTmms']].to_numpy()
-    prs_vals   = data[var_names['PSRF']].to_numpy()
-    fsds_vals  = data[var_names['FSDS']].to_numpy()
-    flds_vals  = data[var_names['FLDS']].to_numpy()
-    q_vals     = data[var_names['RH']].to_numpy()
-    temp_vals  = data[var_names['TBOT']].to_numpy()
-    wind_vals  = data[var_names['WIND']].to_numpy()
+    prec_vals  = data[var_names["PRECTmms"]].to_numpy()
+    prs_vals   = data[var_names["PSRF"]].to_numpy()
+    fsds_vals  = data[var_names["FSDS"]].to_numpy()
+    flds_vals  = data[var_names["FLDS"]].to_numpy()
+    q_vals     = data[var_names["RH"]].to_numpy()
+    temp_vals  = data[var_names["TBOT"]].to_numpy()
+    wind_vals  = data[var_names["WIND"]].to_numpy()
 
     # Iterate through years and months to create separate files:
     for y in years:
@@ -105,57 +113,92 @@ if __name__ == "__main__":
         for m in months:
             
             os.makedirs(outdir, exist_ok=True)
-            dst_name = os.path.join(outdir, f'{y:04d}-{m:02d}.nc')
+            dst_name = os.path.join(outdir, f"{y:04d}-{m:02d}.nc")
         
             dst = nc.Dataset(dst_name, "w")
 
             indices = np.argwhere((site_dates.dt.year == y) & (site_dates.dt.month == m)).flatten()
+            
+            def process_var(array: np.ndarray, 
+                            src_unit: str,
+                            dst_unit: str,
+                            unit_factor: float,
+                            tindex: pd.Series,
+                            tres: str,
+                            dtype: str = "float64") -> np.ndarray:
+                
+                """Process variable: unit conversion, scaling, resampling."""
+                
+                # Unit conversion and scaling
+                unit_quantity = Q_(array, src_unit)
+                convert_unit = unit_quantity.to(dst_unit).magnitude
+                scaled_var = convert_unit * unit_factor
+                
+                # Temporal resampling
+                series = pd.Series(scaled_var, index=tindex)
+                resampled = series.resample(tres).mean().to_numpy().astype(dtype)
+                
+                return resampled
 
             # PRECT
-            precip_forc = pd.Series(Q_(prec_vals[indices], 
-                                       src_units['PRECTmms']).to(dst_units['PRECTmms']).magnitude * scaling_factors['PRECTmms'],
-                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
-            
+            precip_forc = process_var(prec_vals[indices], 
+                                      src_units["PRECTmms"],
+                                      dst_units["PRECTmms"],
+                                      scaling_factors["PRECTmms"],
+                                      site_dates.iloc[indices],
+                                      t_res)
 
             # PSRF
-            prs_forc = pd.Series(Q_(prs_vals[indices], 
-                                       src_units['PSRF']).to(dst_units['PSRF']).magnitude * scaling_factors['PSRF'],
-                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            prs_forc = process_var(prs_vals[indices], 
+                                  src_units["PSRF"],
+                                  dst_units["PSRF"],
+                                  scaling_factors["PSRF"],
+                                  site_dates.iloc[indices],
+                                  t_res)
 
             # FSDS
-            fsds_forc = pd.Series(Q_(fsds_vals[indices], 
-                                       src_units['FSDS']).to(dst_units['FSDS']).magnitude * scaling_factors['FSDS'],
-                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
-            
+            fsds_forc = process_var(fsds_vals[indices], 
+                                   src_units["FSDS"],
+                                   dst_units["FSDS"],
+                                   scaling_factors["FSDS"],
+                                   site_dates.iloc[indices],
+                                   t_res)
 
             # FLDS
-            flds_forc = pd.Series(Q_(flds_vals[indices], 
-                                       src_units['FLDS']).to(dst_units['FLDS']).magnitude * scaling_factors['FLDS'],
-                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            flds_forc = process_var(flds_vals[indices], 
+                                   src_units["FLDS"],
+                                   dst_units["FLDS"],
+                                   scaling_factors["FLDS"],
+                                   site_dates.iloc[indices],
+                                   t_res)
 
             # RH
-            q_forc = pd.Series(Q_(q_vals[indices], 
-                                       src_units['RH']).to(dst_units['RH']).magnitude * scaling_factors['RH'],
-                                    index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
-
+            q_forc = process_var(q_vals[indices], 
+                                src_units["RH"],
+                                dst_units["RH"],
+                                scaling_factors["RH"],
+                                site_dates.iloc[indices],
+                                t_res)
             # TBOT
-            temp_forc = pd.Series(Q_(temp_vals[indices], 
-                                    src_units['TBOT']).to(dst_units['TBOT']).magnitude * scaling_factors['TBOT'],
-                                 index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            temp_forc = process_var(temp_vals[indices], 
+                                   src_units["TBOT"],
+                                   dst_units["TBOT"],
+                                   scaling_factors["TBOT"],
+                                   site_dates.iloc[indices],
+                                   t_res)
             # WIND
-            wind_forc = pd.Series(Q_(wind_vals[indices], 
-                                    src_units['WIND']).to(dst_units['WIND']).magnitude * scaling_factors['WIND'],
-                                 index=site_dates.iloc[indices]).resample(t_res).mean().to_numpy().astype(np.float64)
+            wind_forc = process_var(wind_vals[indices], 
+                                   src_units["WIND"],
+                                   dst_units["WIND"],
+                                   scaling_factors["WIND"],
+                                   site_dates.iloc[indices],
+                                   t_res)
             
             # time hours since beginning of file
             time_forc = np.linspace(0, 
                                    (indices[-1] - indices[0]) * t_per_h, 
                                    indices[-1] - indices[-0], 
                                    dtype=np.float32)
-            
-            #print(time_forc)
-            
-            #exit()
 
             # dimensions
             dst.createDimension("scalar", 1)

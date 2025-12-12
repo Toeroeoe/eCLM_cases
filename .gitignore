@@ -9,3 +9,4 @@
 mpi-*
 *.csv
 .venv/venv/*
+*.namelist
